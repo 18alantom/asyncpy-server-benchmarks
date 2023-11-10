@@ -1,0 +1,1 @@
+Simple POC to compare async and sync Python
