@@ -1,0 +1,6 @@
+/*.o
+/rng-server
+**/temp*.*
+notes.md
+env/
+__pycache__
