@@ -12,7 +12,7 @@ Additional (fake) latency can be applied per request by using
 Remaining of the flags are passed through to the Uvicorn config.
 """
 
-import time
+import asyncio
 
 from rng_server.response import get_body
 from utils import get_kwargs_from_argv
@@ -31,7 +31,7 @@ def app_factory():
             return await send_404(send)
 
         if sleep > 0:
-            time.sleep(sleep)
+            await asyncio.sleep(sleep)
 
         await send_200(send)
 
