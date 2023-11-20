@@ -1,3 +1,13 @@
+def get_template():
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    env = Environment(
+        loader=FileSystemLoader("./templates"),
+        autoescape=select_autoescape(),
+    )
+    return env.get_template("home.html")
+
+
 def get_kwargs_from_argv():
     import sys
 
