@@ -1,7 +1,13 @@
+"""
+Stupid Async App
+
+This makes use of async BUT doesn't make use of async io.
+The db request is made synchronously.
+"""
 import asyncio
-import json
 from datetime import datetime
 
+import requests
 from httpcore import AsyncConnectionPool
 from starlette.applications import Starlette
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -15,15 +21,15 @@ http = AsyncConnectionPool()
 
 async def send_home(request):
     page = template.render(
-        server_type="Starlette :: ASGI App (async)",
+        server_type="Starlette :: ASGI App (stupid async)",
         date=datetime.now().isoformat(),
     )
     return HTMLResponse(page)
 
 
 async def send_api(request):
-    resp = await http.request("GET", "http://127.0.0.1:6161")
-    data = {"message": "SUCCESS", **json.loads(resp.content)}
+    resp = requests.get("http://127.0.0.1:6161")
+    data = {"message": "SUCCESS", **resp.json()}
     return JSONResponse(data)
 
 
