@@ -196,6 +196,27 @@ vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
 
+#### `gunicorn -k gthread -w 2 sync_app:app`
+
+```bash
+data_received..................: 2.6 MB 44 kB/s
+data_sent......................: 549 kB 9.1 kB/s
+http_req_blocked...............: avg=4.17µs   min=0s       med=2µs      max=1.69ms   p(90)=5µs      p(95)=6µs
+http_req_connecting............: avg=563ns    min=0s       med=0s       max=423µs    p(90)=0s       p(95)=0s
+http_req_duration..............: avg=55.03ms  min=2.17ms   med=36.5ms   max=171.45ms p(90)=128.29ms p(95)=151.38ms
+  { expected_response:true }...: avg=55.03ms  min=2.17ms   med=36.5ms   max=171.45ms p(90)=128.29ms p(95)=151.38ms
+http_req_failed................: 0.00%  ✓ 0          ✗ 6780
+http_req_receiving.............: avg=27.81µs  min=6µs      med=20µs     max=1.29ms   p(90)=55µs     p(95)=72µs
+http_req_sending...............: avg=14.9µs   min=1µs      med=7µs      max=2.28ms   p(90)=19µs     p(95)=25µs
+http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=54.98ms  min=1.87ms   med=36.45ms  max=171.41ms p(90)=128.24ms p(95)=151.33ms
+http_reqs......................: 6780   112.778197/s
+iteration_duration.............: avg=265.98ms min=250.47ms med=265.93ms max=284.53ms p(90)=272.44ms p(95)=274.45ms
+iterations.....................: 2260   37.592732/s
+vus............................: 10     min=10       max=10
+vus_max........................: 10     min=10       max=10
+```
+
 #### `gunicorn -w 2 donkey_patched_async_app:app`
 
 ```bash
