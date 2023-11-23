@@ -3,7 +3,6 @@ Async App
 
 Db request is made async.
 """
-import asyncio
 import json
 from datetime import datetime
 

@@ -1,3 +1,8 @@
+"""
+Sync App
+
+Regular sync app that makes the db request sync.
+"""
 import json
 from datetime import datetime
 

@@ -1,3 +1,6 @@
+import asyncio
+import inspect
+
 def get_template():
     from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -29,3 +32,14 @@ def get_kwargs_from_argv():
             kwargs[k] = v
 
     return kwargs
+
+
+def async_to_sync(fn):
+    if not inspect.iscoroutinefunction(fn):
+        return fn
+
+    def donkey_patched(*args, **kwargs):
+        coro = fn(*args, **kwargs)
+        return asyncio.run(coro)
+
+    return donkey_patched

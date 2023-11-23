@@ -196,7 +196,28 @@ vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
 
-## Tests without DB Latency
+#### `gunicorn -w 2 donkey_patched_async_app:app`
+
+```bash
+data_received..................: 1.8 MB 28 kB/s
+data_sent......................: 386 kB 6.0 kB/s
+http_req_blocked...............: avg=25.09ms  min=140µs    med=430µs    max=6.71s  p(90)=778µs    p(95)=895µs
+http_req_connecting............: avg=25.05ms  min=127µs    med=394µs    max=6.71s  p(90)=717µs    p(95)=818µs
+http_req_duration..............: avg=76.42ms  min=769µs    med=35.82ms  max=8s     p(90)=126.92ms p(95)=150.27ms
+ { expected_response:true }...: avg=76.42ms  min=769µs    med=35.82ms  max=8s     p(90)=126.92ms p(95)=150.27ms
+http_req_failed................: 0.00%  ✓ 0         ✗ 4764
+http_req_receiving.............: avg=47.52µs  min=12µs     med=39µs     max=1.14ms p(90)=86µs     p(95)=99µs
+http_req_sending...............: avg=24.89µs  min=6µs      med=21µs     max=2.01ms p(90)=38µs     p(95)=46µs
+http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s     p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=76.35ms  min=732µs    med=35.74ms  max=8s     p(90)=126.85ms p(95)=150.2ms
+http_reqs......................: 4764   73.958065/s
+iteration_duration.............: avg=405.09ms min=241.69ms med=265.17ms max=8.11s  p(90)=274.85ms p(95)=279.56ms
+iterations.....................: 1588   24.652688/s
+vus............................: 10     min=10      max=10
+vus_max........................: 10     min=10      max=10
+```
+
+## Tests without DB Latency using two workers
 
 Fake DB Server Command
 
