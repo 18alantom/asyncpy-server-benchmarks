@@ -89,27 +89,6 @@ vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
 
-#### `uvicorn --workers 1 --log-level error stupid_async_app:app`
-
-```bash
-data_received..................: 1.6 MB 26 kB/s
-data_sent......................: 360 kB 6.0 kB/s
-http_req_blocked...............: avg=5.27µs   min=0s       med=2µs      max=1.15ms   p(90)=5µs      p(95)=7µs
-http_req_connecting............: avg=504ns    min=0s       med=0s       max=250µs    p(90)=0s       p(95)=0s
-http_req_duration..............: avg=101.49ms min=194µs    med=1.27ms   max=323.38ms p(90)=303.63ms p(95)=306.25ms
- { expected_response:true }...: avg=101.49ms min=194µs    med=1.27ms   max=323.38ms p(90)=303.63ms p(95)=306.25ms
-http_req_failed................: 0.00%  ✓ 0         ✗ 4440
-http_req_receiving.............: avg=33.11µs  min=5µs      med=23µs     max=2.91ms   p(90)=56µs     p(95)=77µs
-http_req_sending...............: avg=13.14µs  min=1µs      med=8µs      max=1.04ms   p(90)=20µs     p(95)=27µs
-http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
-http_req_waiting...............: avg=101.45ms min=176µs    med=1.24ms   max=323.34ms p(90)=303.54ms p(95)=306.21ms
-http_reqs......................: 4440   73.9748/s
-iteration_duration.............: avg=405.72ms min=394.93ms med=405.48ms max=425.64ms p(90)=412.97ms p(95)=415.08ms
-iterations.....................: 1480   24.658267/s
-vus............................: 10     min=10      max=10
-vus_max........................: 10     min=10      max=10
-```
-
 ### Two Workers
 
 #### `gunicorn -w 2 sync_app:app`
@@ -150,6 +129,27 @@ http_req_waiting...............: avg=10.79ms  min=120µs    med=909µs    max=45
 http_reqs......................: 13524  225.046201/s
 iteration_duration.............: avg=133.29ms min=126.85ms med=132.84ms max=148.11ms p(90)=137.08ms p(95)=138.94ms
 iterations.....................: 4508   75.0154/s
+vus............................: 10     min=10       max=10
+vus_max........................: 10     min=10       max=10
+```
+
+#### `uvicorn --workers 2 --log-level error stupid_async_app:app`
+
+```bash
+data_received..................: 2.5 MB 42 kB/s
+data_sent......................: 572 kB 9.5 kB/s
+http_req_blocked...............: avg=4.42µs   min=0s       med=2µs      max=1.03ms   p(90)=6µs      p(95)=9µs
+http_req_connecting............: avg=979ns    min=0s       med=0s       max=782µs    p(90)=0s       p(95)=0s
+http_req_duration..............: avg=51.4ms   min=86µs     med=1.22ms   max=211.71ms p(90)=194.69ms p(95)=199.57ms
+  { expected_response:true }...: avg=51.4ms   min=86µs     med=1.22ms   max=211.71ms p(90)=194.69ms p(95)=199.57ms
+http_req_failed................: 0.00%  ✓ 0          ✗ 7062
+http_req_receiving.............: avg=35.82µs  min=4µs      med=24µs     max=3.36ms   p(90)=63µs     p(95)=87µs
+http_req_sending...............: avg=13.78µs  min=1µs      med=9µs      max=2.48ms   p(90)=23µs     p(95)=32µs
+http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=51.35ms  min=69µs     med=1.17ms   max=211.68ms p(90)=194.63ms p(95)=199.52ms
+http_reqs......................: 7062   117.275996/s
+iteration_duration.............: avg=255.52ms min=180.43ms med=295.88ms max=318.77ms p(90)=305.66ms p(95)=308.23ms
+iterations.....................: 2354   39.091999/s
 vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
