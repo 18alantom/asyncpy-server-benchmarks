@@ -104,9 +104,8 @@ where a large number of requests result in IO bound operations, this ratio might
 
 # Testing
 
-All tests run using [K6](https://github.com/grafana/k6) script `load.js` that sends requests
-
-. Tests have been run using one or two workers, and by applying without or with db latency (25ms).
+All tests run using [K6](https://github.com/grafana/k6) script `load.js` that sends requests.
+Tests have been run using one or two workers, and by applying without or with db latency (25ms).
 
 All results are from tests run on:
 
@@ -144,8 +143,8 @@ All timings mentioned are P95. All rows have been sorted by number of requests h
 | Async          | uvicorn                 | `async_app`                |      13,524 |      32.96ms |      5.84µs |
 | Async          | gunicorn[gevent]        | `sync_app`                 |      13,470 |      33.84ms |         5µs |
 | Async          | gunicorn[UvicornWorker] | `async_app`                |      13,410 |      33.51ms |         5µs |
+| Sync           | gunicorn[gthread]       | `sync_app`                 |      10,350 |      69.26ms |         4µs |
 | Stupid Async   | uvicorn                 | `stupid_async`             |       7,062 |     199.57ms |         9µs |
-| Sync           | gunicorn[gthread]       | `sync_app`                 |       6,780 |     151.38ms |         6µs |
 | Donkey Patched | gunicorn                | `donkey_patched_async_app` |       4,764 |     150.27ms |       895µs |
 | Sync           | gunicorn                | `sync_app`                 |       4,740 |     140.88ms |      1020µs |
 
@@ -285,23 +284,23 @@ vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
 
-#### `gunicorn -k gthread -w 2 sync_app:app`
+#### `gunicorn -k gthread -w 2 --threads 2 sync_app:app`
 
 ```bash
-data_received..................: 2.6 MB 44 kB/s
-data_sent......................: 549 kB 9.1 kB/s
-http_req_blocked...............: avg=4.17µs   min=0s       med=2µs      max=1.69ms   p(90)=5µs      p(95)=6µs
-http_req_connecting............: avg=563ns    min=0s       med=0s       max=423µs    p(90)=0s       p(95)=0s
-http_req_duration..............: avg=55.03ms  min=2.17ms   med=36.5ms   max=171.45ms p(90)=128.29ms p(95)=151.38ms
-  { expected_response:true }...: avg=55.03ms  min=2.17ms   med=36.5ms   max=171.45ms p(90)=128.29ms p(95)=151.38ms
-http_req_failed................: 0.00%  ✓ 0          ✗ 6780
-http_req_receiving.............: avg=27.81µs  min=6µs      med=20µs     max=1.29ms   p(90)=55µs     p(95)=72µs
-http_req_sending...............: avg=14.9µs   min=1µs      med=7µs      max=2.28ms   p(90)=19µs     p(95)=25µs
-http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
-http_req_waiting...............: avg=54.98ms  min=1.87ms   med=36.45ms  max=171.41ms p(90)=128.24ms p(95)=151.33ms
-http_reqs......................: 6780   112.778197/s
-iteration_duration.............: avg=265.98ms min=250.47ms med=265.93ms max=284.53ms p(90)=272.44ms p(95)=274.45ms
-iterations.....................: 2260   37.592732/s
+data_received..................: 4.0 MB 67 kB/s
+data_sent......................: 838 kB 14 kB/s
+http_req_blocked...............: avg=3.18µs  min=0s       med=1µs      max=1.41ms   p(90)=3µs      p(95)=4µs
+http_req_connecting............: avg=551ns   min=0s       med=0s       max=610µs    p(90)=0s       p(95)=0s
+http_req_duration..............: avg=24.5ms  min=603µs    med=6.92ms   max=94.47ms  p(90)=64.39ms  p(95)=69.26ms
+  { expected_response:true }...: avg=24.5ms  min=603µs    med=6.92ms   max=94.47ms  p(90)=64.39ms  p(95)=69.26ms
+http_req_failed................: 0.00%  ✓ 0          ✗ 10350
+http_req_receiving.............: avg=51.53µs min=7µs      med=19µs     max=1.38ms   p(90)=80µs     p(95)=175µs
+http_req_sending...............: avg=8.07µs  min=2µs      med=6µs      max=1.22ms   p(90)=13µs     p(95)=17µs
+http_req_tls_handshaking.......: avg=0s      min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=24.44ms min=583µs    med=6.9ms    max=94.44ms  p(90)=64.23ms  p(95)=69.21ms
+http_reqs......................: 10350  172.237292/s
+iteration_duration.............: avg=174.1ms min=165.37ms med=173.83ms max=202.32ms p(90)=177.26ms p(95)=178.88ms
+iterations.....................: 3450   57.412431/s
 vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
