@@ -1,20 +1,173 @@
-Simple POC to compare async and sync Python.
+# Python Async Benchmarks
 
-Servers:
+Repo consists of synthetic benchmarks of Python WSGI and ASGI apps and servers.
 
-1. WSGI web server: `sync_app.py`
-2. ASGI web server: `async_app.py`
+## Setup, Servers, and Apps
 
-Both web servers do a couple of things:
+All WSGI, ASGI apps handle two paths:
 
-1. `/`: Return a templated HTML page.
-2. `/api`: Pings the `fake_db_server.py` to get a random piece of data.
+1. `/`: returns a rendered HTML template. This is a CPU bound task.
+2. `/api`: returns a random number after requesting `fake_db_server.py` This is an IO bound task.
+
+### Stack
+
+| Type | Server                                                                                                                                                                   | App                                    |
+| :--- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| WSGI | [Gunicorn](https://gunicorn.org/) using regular, [gevent](https://www.gevent.org) and [gthread](https://docs.gunicorn.org/en/stable/design.html#gthread-workers) workers | [Werkzeug](https://gunicorn.org/)      |
+| ASGI | [Uvicorn](https://www.uvicorn.org/), [Gunicorn with Uvicorn workers](https://www.uvicorn.org/deployment/)                                                                | [Starlette](https://www.starlette.io/) |
+
+### Servers and Apps
+
+- `fake_db_server.py`: async server that acts as a simulacrum of a database server. Latency can be applied to each request separately (cause async).
+- `sync_app.py`: simple Werkzeug app.
+- `async_app.py`: simple Starlette app.
+- `stupid_async_app.py`: Starlette app without asyncio. "DB" calls are made synchronously.
+- `donkey_patched_async_app.py`: Werkzeug app that has async path handling. "DB" calls are made async, for each request `asyncio.run` is called.
+
+Donkey patched async tries to replicate how [Flask](https://flask.palletsprojects.com/en/3.0.x/async-await/#performance)
+and [Django](https://docs.djangoproject.com/en/4.2/topics/async/#async-views) (WSGI) deal with async request handling.
 
 ---
 
-# Tests and Results
+# Notes
 
-Tests run using K6 script `load.js`
+### Gunicorn Workers
+
+Each gunicorn worker is a forked processes that handles the request, the main process manages
+these workers.
+
+These tests compare a few types of workers: sync, gevent, gthread, UvicornWorker. All of these
+function differently from each other.
+
+- `sync`: handles requests synchronously and is what is used by default.
+- `gevent`: handles requests asynchronously by using [async patched workers](https://github.com/benoitc/gunicorn/blob/ca9162d9cd0f2403a4b65a54ddb996eb855e8b58/gunicorn/workers/ggevent.py#L144).
+- `gthread`: handles requests using threaded workers, i.e. each worker process has a [thread pool](https://github.com/benoitc/gunicorn/blob/ca9162d9cd0f2403a4b65a54ddb996eb855e8b58/gunicorn/workers/gthread.py#L91C1-L91C1).
+- `UvicornWorker`: handles requests async and can be used to run ASGI apps.
+
+#### Gevent
+
+[`gevent`](https://www.gevent.org/api/index.html) allows patching of std modules. This allows for
+implicit async. It uses `greenlet` for scheduling, and `libuv` or `libev` for async implementations
+of low level async-able code eg [`socket`](https://www.gevent.org/api/gevent.socket.html).
+
+#### Gthread
+
+`gthread` uses multi-threaded workers using [`ThreadPoolExecutor`](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.ThreadPoolExecutor),
+the efficacy of this depends on how much the worker threads are running asyncable tasks (check `asyncable.py` for an example)
+that can be run concurrently across threads.
+
+Depending on the task the GIL may or may not be released ([ref](https://stackoverflow.com/a/74936772/9681690)),
+and so a large portion of the tasks may run concurrently, scheduled across processors, in a shorter amount of
+time.
+
+### Differences in Code Efficiency Not Accounted For
+
+While these tests check for time differences between sync and async code, they don't
+account for inefficiencies between the stack.
+
+For instance if both sync `urllib.request` and async `httpcore` are equally efficient
+then the time taken to handle a single request would be the same. This may not be the case.
+
+This is observed when comparing `gunicorn sync_app:app` (7,062) vs `uvicorn stupid_async_app:app`
+(4,740) wherein the latter runs sync code wrapped in an async block. If there was no efficiency
+difference, both would process roughly the same number of requests.
+
+### Effectiveness of Donkey Patched Async
+
+Donkey patched async allows execution of async code **only within a single request**. Regular
+async allows execution of async code **across requests**.
+
+This means that if there are multiple async calls within a request then this method would be
+faster than regular sync code.
+
+This test doesn't do justice to donkey patched async because each request (i.e. `/api`) has
+at most just one async call.
+
+### Regarding 3:1 Ratio Between Async and Sync
+
+When comparing pure async (eg `uvicorn async_app:app`) vs pure sync (eg `gunicorn sync_app:app`)
+implementations, it's observed the async handles roughly 3 times as many requests as sync.
+
+This may be due to requests in the `load.js` script:
+
+```bash
+http.get(url);
+sleep(0.1); # ignored when calculating req metrics
+http.get(url + '/api');
+http.get(url);
+```
+
+i.e. two out of the three requests can be handled only async.
+
+This ratio depends on what proportion of the code across requests runs async. For CRUD apps
+where a large number of requests result in IO bound operations, this ratio might be higher.
+
+# Testing
+
+All tests run using [K6](https://github.com/grafana/k6) script `load.js` that sends requests
+
+. Tests have been run using one or two workers, and by applying without or with db latency (25ms).
+
+All results are from tests run on:
+
+```bash
+OS: macOS 13.5.2 22G91 arm64
+Kernel: 22.6.0
+Shell: zsh 5.9
+Terminal: iTerm2
+CPU: Apple M1 Pro
+Memory: 32768MiB
+```
+
+To run a test, run these commands in separate shells:
+
+```bash
+# --sleep = Fake DB latency in ms
+./fake_db_server --sleep=SLEEP_AMOUNT
+
+# Check the test titles under Detailed Results, eg:
+#   gunicorn -w 1 sync_server:app
+python_web_server_command
+
+# load.js has options set
+k6 run load.js
+```
+
+## Results
+
+All timings mentioned are P95. All rows have been sorted by number of requests handled.
+
+### Testing with Two Workers and 25ms DB Latency
+
+| Mode           | Server                  | App                        | Req Handled | Req Duration | Req Blocked |
+| :------------- | :---------------------- | :------------------------- | ----------: | -----------: | ----------: |
+| Async          | uvicorn                 | `async_app`                |      13,524 |      32.96ms |      5.84µs |
+| Async          | gunicorn[gevent]        | `sync_app`                 |      13,470 |      33.84ms |         5µs |
+| Async          | gunicorn[UvicornWorker] | `async_app`                |      13,410 |      33.51ms |         5µs |
+| Stupid Async   | uvicorn                 | `stupid_async`             |       7,062 |     199.57ms |         9µs |
+| Sync           | gunicorn[gthread]       | `sync_app`                 |       6,780 |     151.38ms |         6µs |
+| Donkey Patched | gunicorn                | `donkey_patched_async_app` |       4,764 |     150.27ms |       895µs |
+| Sync           | gunicorn                | `sync_app`                 |       4,740 |     140.88ms |      1020µs |
+
+### Testing with One Worker and 25ms DB Latency
+
+| Mode  | Server                  | App         | Req Handled | Req Duration | Req Blocked |
+| :---- | :---------------------- | :---------- | ----------: | -----------: | ----------: |
+| Async | uvicorn                 | `async_app` |      13,590 |      32.77ms |         5µs |
+| Async | gunicorn[UvicornWorker] | `async_app` |      13,533 |      32.28ms |         4µs |
+| Sync  | gunicorn                | `sync_app`  |       4,197 |      258.5ms |    828.39µs |
+
+### Testing with Two Workers and No DB Latency
+
+| Mode  | Server                  | App         | Req Handled | Req Duration | Req Blocked |
+| :---- | :---------------------- | :---------- | ----------: | -----------: | ----------: |
+| Async | uvicorn                 | `async_app` |      17,175 |       4.73ms |         5µs |
+| Async | gunicorn[UvicornWorker] | `async_app` |      17,040 |       5.15ms |         4µs |
+| Sync  | gunicorn                | `sync_app`  |       5,337 |       5.99ms |       904µs |
+
+# Detailed Results
+
+Reference to what the metrics mean: [k6.io/docs/using-k6/metrics/reference/](https://k6.io/docs/using-k6/metrics/reference/)
 
 ## Tests with DB Latency of 25ms
 
@@ -24,91 +177,27 @@ Fake DB Server Command
 ./fake_db_server.py --sleep 25
 ```
 
-### One Worker
-
-#### `gunicorn -w 1 sync_app:app`
-
-```bash
-data_received..................: 1.6 MB 26 kB/s
-data_sent......................: 340 kB 5.7 kB/s
-http_req_blocked...............: avg=6.21ms   min=123µs    med=321µs    max=6.71s  p(90)=690µs    p(95)=828.39µs
-http_req_connecting............: avg=6.17ms   min=106µs    med=288µs    max=6.71s  p(90)=619.4µs  p(95)=761.2µs
-http_req_duration..............: avg=103.57ms min=878µs    med=69.05ms  max=4.55s  p(90)=239.16ms p(95)=258.5ms
-  { expected_response:true }...: avg=103.57ms min=878µs    med=69.05ms  max=4.55s  p(90)=239.16ms p(95)=258.5ms
-http_req_failed................: 0.00%  ✓ 0         ✗ 4197
-http_req_receiving.............: avg=50.72µs  min=13µs     med=39µs     max=5.5ms  p(90)=89µs     p(95)=108µs
-http_req_sending...............: avg=22.64µs  min=6µs      med=18µs     max=1.75ms p(90)=38µs     p(95)=47µs
-http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s     p(90)=0s       p(95)=0s
-http_req_waiting...............: avg=103.5ms  min=826µs    med=69ms     max=4.55s  p(90)=239.08ms p(95)=258.44ms
-http_reqs......................: 4197   69.804625/s
-iteration_duration.............: avg=429.72ms min=302.74ms med=396.06ms max=6.91s  p(90)=403.99ms p(95)=405.56ms
-iterations.....................: 1399   23.268208/s
-vus............................: 10     min=10      max=10
-vus_max........................: 10     min=10      max=10
-```
-
-#### `uvicorn --workers 1 --log-level error async_app:app`
-
-```bash
-data_received..................: 4.8 MB 79 kB/s
-data_sent......................: 1.1 MB 18 kB/s
-http_req_blocked...............: avg=2.39µs   min=0s       med=1µs      max=810µs    p(90)=3µs      p(95)=5µs
-http_req_connecting............: avg=522ns    min=0s       med=0s       max=787µs    p(90)=0s       p(95)=0s
-http_req_duration..............: avg=10.72ms  min=126µs    med=951.5µs  max=44.4ms   p(90)=31.52ms  p(95)=32.77ms
-  { expected_response:true }...: avg=10.72ms  min=126µs    med=951.5µs  max=44.4ms   p(90)=31.52ms  p(95)=32.77ms
-http_req_failed................: 0.00%  ✓ 0          ✗ 13590
-http_req_receiving.............: avg=17.87µs  min=4µs      med=15µs     max=373µs    p(90)=25µs     p(95)=37µs
-http_req_sending...............: avg=7.71µs   min=1µs      med=5µs      max=1.64ms   p(90)=14µs     p(95)=20µs
-http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
-http_req_waiting...............: avg=10.69ms  min=117µs    med=930µs    max=44.38ms  p(90)=31.49ms  p(95)=32.73ms
-http_reqs......................: 13590  226.251252/s
-iteration_duration.............: avg=132.58ms min=127.02ms med=132.24ms max=146.92ms p(90)=135.49ms p(95)=137.16ms
-iterations.....................: 4530   75.417084/s
-vus............................: 10     min=10       max=10
-vus_max........................: 10     min=10       max=10
-```
-
-#### `gunicorn -k uvicorn.workers.UvicornWorker -w 1 async_app:app`
-
-```bash
-data_received..................: 4.7 MB 79 kB/s
-data_sent......................: 1.1 MB 18 kB/s
-http_req_blocked...............: avg=2.59µs   min=0s       med=1µs      max=1.42ms   p(90)=3µs      p(95)=4µs
-http_req_connecting............: avg=486ns    min=0s       med=0s       max=690µs    p(90)=0s       p(95)=0s
-http_req_duration..............: avg=10.89ms  min=236µs    med=1.55ms   max=46.38ms  p(90)=31.06ms  p(95)=32.28ms
-  { expected_response:true }...: avg=10.89ms  min=236µs    med=1.55ms   max=46.38ms  p(90)=31.06ms  p(95)=32.28ms
-http_req_failed................: 0.00%  ✓ 0          ✗ 13533
-http_req_receiving.............: avg=17.72µs  min=4µs      med=15µs     max=982µs    p(90)=25µs     p(95)=37µs
-http_req_sending...............: avg=7.14µs   min=1µs      med=5µs      max=303µs    p(90)=13µs     p(95)=18µs
-http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
-http_req_waiting...............: avg=10.87ms  min=228µs    med=1.53ms   max=46.36ms  p(90)=31.02ms  p(95)=32.25ms
-http_reqs......................: 13533  225.465003/s
-iteration_duration.............: avg=133.04ms min=127.65ms med=132.77ms max=150.07ms p(90)=135.84ms p(95)=137.19ms
-iterations.....................: 4511   75.155001/s
-vus............................: 10     min=10       max=10
-vus_max........................: 10     min=10       max=10
-```
-
-### Two Workers
+<details>
+<summary><h3>Two Workers</h3></summary>
 
 #### `gunicorn -w 2 sync_app:app`
 
 ```bash
-data_received..................: 1.7 MB 27 kB/s
-data_sent......................: 365 kB 6.0 kB/s
-http_req_blocked...............: avg=9.03ms   min=113µs   med=446µs    max=13.11s p(90)=858.5µs  p(95)=1.04ms
-http_req_connecting............: avg=8.99ms   min=97µs    med=412µs    max=13.11s p(90)=803µs    p(95)=972.74µs
-http_req_duration..............: avg=91.65ms  min=856µs   med=32.54ms  max=13.26s p(90)=118.89ms p(95)=141.59ms
-  { expected_response:true }...: avg=91.65ms  min=856µs   med=32.54ms  max=13.26s p(90)=118.89ms p(95)=141.59ms
-http_req_failed................: 0.00%  ✓ 0         ✗ 4506
-http_req_receiving.............: avg=51.53µs  min=10µs    med=38µs     max=3.1ms  p(90)=87µs     p(95)=102µs
-http_req_sending...............: avg=22.44µs  min=6µs     med=19µs     max=353µs  p(90)=36µs     p(95)=43µs
-http_req_tls_handshaking.......: avg=0s       min=0s      med=0s       max=0s     p(90)=0s       p(95)=0s
-http_req_waiting...............: avg=91.58ms  min=797µs   med=32.46ms  max=13.26s p(90)=118.8ms  p(95)=141.49ms
-http_reqs......................: 4506   73.679303/s
-iteration_duration.............: avg=402.55ms min=244.4ms med=252.94ms max=13.37s p(90)=260.63ms p(95)=308.06ms
-iterations.....................: 1502   24.559768/s
-vus............................: 3      min=3       max=10
+data_received..................: 1.8 MB 29 kB/s
+data_sent......................: 384 kB 6.4 kB/s
+http_req_blocked...............: avg=39.35ms min=127µs    med=448µs    max=13.11s p(90)=846.1µs  p(95)=1.02ms
+http_req_connecting............: avg=39.3ms  min=118µs    med=410µs    max=13.11s p(90)=782.1µs  p(95)=947.04µs
+http_req_duration..............: avg=53.84ms min=477µs    med=32.06ms  max=13.16s p(90)=118.04ms p(95)=140.88ms
+  { expected_response:true }...: avg=53.84ms min=477µs    med=32.06ms  max=13.16s p(90)=118.04ms p(95)=140.88ms
+http_req_failed................: 0.00%  ✓ 0         ✗ 4740
+http_req_receiving.............: avg=50.13µs min=11µs     med=41µs     max=1.75ms p(90)=85µs     p(95)=100µs
+http_req_sending...............: avg=25.39µs min=6µs      med=21µs     max=578µs  p(90)=39µs     p(95)=48µs
+http_req_tls_handshaking.......: avg=0s      min=0s       med=0s       max=0s     p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=53.76ms min=438µs    med=31.98ms  max=13.16s p(90)=117.94ms p(95)=140.78ms
+http_reqs......................: 4740   78.900679/s
+iteration_duration.............: avg=380.2ms min=131.06ms med=254.16ms max=14.01s p(90)=260.65ms p(95)=263.63ms
+iterations.....................: 1580   26.300226/s
+vus............................: 10     min=10      max=10
 vus_max........................: 10     min=10      max=10
 ```
 
@@ -238,7 +327,77 @@ vus............................: 10     min=10      max=10
 vus_max........................: 10     min=10      max=10
 ```
 
-## Tests without DB Latency using two workers
+</details>
+
+<details>
+<summary><h3>One Worker</h3></summary>
+
+#### `gunicorn -w 1 sync_app:app`
+
+```bash
+data_received..................: 1.6 MB 26 kB/s
+data_sent......................: 340 kB 5.7 kB/s
+http_req_blocked...............: avg=6.21ms   min=123µs    med=321µs    max=6.71s  p(90)=690µs    p(95)=828.39µs
+http_req_connecting............: avg=6.17ms   min=106µs    med=288µs    max=6.71s  p(90)=619.4µs  p(95)=761.2µs
+http_req_duration..............: avg=103.57ms min=878µs    med=69.05ms  max=4.55s  p(90)=239.16ms p(95)=258.5ms
+  { expected_response:true }...: avg=103.57ms min=878µs    med=69.05ms  max=4.55s  p(90)=239.16ms p(95)=258.5ms
+http_req_failed................: 0.00%  ✓ 0         ✗ 4197
+http_req_receiving.............: avg=50.72µs  min=13µs     med=39µs     max=5.5ms  p(90)=89µs     p(95)=108µs
+http_req_sending...............: avg=22.64µs  min=6µs      med=18µs     max=1.75ms p(90)=38µs     p(95)=47µs
+http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s     p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=103.5ms  min=826µs    med=69ms     max=4.55s  p(90)=239.08ms p(95)=258.44ms
+http_reqs......................: 4197   69.804625/s
+iteration_duration.............: avg=429.72ms min=302.74ms med=396.06ms max=6.91s  p(90)=403.99ms p(95)=405.56ms
+iterations.....................: 1399   23.268208/s
+vus............................: 10     min=10      max=10
+vus_max........................: 10     min=10      max=10
+```
+
+#### `uvicorn --workers 1 --log-level error async_app:app`
+
+```bash
+data_received..................: 4.8 MB 79 kB/s
+data_sent......................: 1.1 MB 18 kB/s
+http_req_blocked...............: avg=2.39µs   min=0s       med=1µs      max=810µs    p(90)=3µs      p(95)=5µs
+http_req_connecting............: avg=522ns    min=0s       med=0s       max=787µs    p(90)=0s       p(95)=0s
+http_req_duration..............: avg=10.72ms  min=126µs    med=951.5µs  max=44.4ms   p(90)=31.52ms  p(95)=32.77ms
+  { expected_response:true }...: avg=10.72ms  min=126µs    med=951.5µs  max=44.4ms   p(90)=31.52ms  p(95)=32.77ms
+http_req_failed................: 0.00%  ✓ 0          ✗ 13590
+http_req_receiving.............: avg=17.87µs  min=4µs      med=15µs     max=373µs    p(90)=25µs     p(95)=37µs
+http_req_sending...............: avg=7.71µs   min=1µs      med=5µs      max=1.64ms   p(90)=14µs     p(95)=20µs
+http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=10.69ms  min=117µs    med=930µs    max=44.38ms  p(90)=31.49ms  p(95)=32.73ms
+http_reqs......................: 13590  226.251252/s
+iteration_duration.............: avg=132.58ms min=127.02ms med=132.24ms max=146.92ms p(90)=135.49ms p(95)=137.16ms
+iterations.....................: 4530   75.417084/s
+vus............................: 10     min=10       max=10
+vus_max........................: 10     min=10       max=10
+```
+
+#### `gunicorn -k uvicorn.workers.UvicornWorker -w 1 async_app:app`
+
+```bash
+data_received..................: 4.7 MB 79 kB/s
+data_sent......................: 1.1 MB 18 kB/s
+http_req_blocked...............: avg=2.59µs   min=0s       med=1µs      max=1.42ms   p(90)=3µs      p(95)=4µs
+http_req_connecting............: avg=486ns    min=0s       med=0s       max=690µs    p(90)=0s       p(95)=0s
+http_req_duration..............: avg=10.89ms  min=236µs    med=1.55ms   max=46.38ms  p(90)=31.06ms  p(95)=32.28ms
+  { expected_response:true }...: avg=10.89ms  min=236µs    med=1.55ms   max=46.38ms  p(90)=31.06ms  p(95)=32.28ms
+http_req_failed................: 0.00%  ✓ 0          ✗ 13533
+http_req_receiving.............: avg=17.72µs  min=4µs      med=15µs     max=982µs    p(90)=25µs     p(95)=37µs
+http_req_sending...............: avg=7.14µs   min=1µs      med=5µs      max=303µs    p(90)=13µs     p(95)=18µs
+http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s
+http_req_waiting...............: avg=10.87ms  min=228µs    med=1.53ms   max=46.36ms  p(90)=31.02ms  p(95)=32.25ms
+http_reqs......................: 13533  225.465003/s
+iteration_duration.............: avg=133.04ms min=127.65ms med=132.77ms max=150.07ms p(90)=135.84ms p(95)=137.19ms
+iterations.....................: 4511   75.155001/s
+vus............................: 10     min=10       max=10
+vus_max........................: 10     min=10       max=10
+```
+
+</details>
+
+## Tests without DB Latency
 
 Fake DB Server Command
 
@@ -246,7 +405,10 @@ Fake DB Server Command
 ./fake_db_server.py
 ```
 
-### `gunicorn -w 2 sync_app:app`
+<details>
+<summary><h3>Two Workers</h3></summary>
+
+#### `gunicorn -w 2 sync_app:app`
 
 ```bash
 data_received..................: 2.0 MB 33 kB/s
@@ -267,7 +429,7 @@ vus............................: 10     min=10      max=10
 vus_max........................: 10     min=10      max=10
 ```
 
-### `uvicorn --workers 2 --log-level error async_app:app`
+#### `uvicorn --workers 2 --log-level error async_app:app`
 
 ```bash
 data_received..................: 6.0 MB 100 kB/s
@@ -288,7 +450,7 @@ vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
 
-### `gunicorn -k uvicorn.workers.UvicornWorker -w 2 async_app:app`
+#### `gunicorn -k uvicorn.workers.UvicornWorker -w 2 async_app:app`
 
 ```bash
 data_received..................: 6.0 MB 99 kB/s
@@ -308,3 +470,5 @@ iterations.....................: 5680   94.526504/s
 vus............................: 10     min=10       max=10
 vus_max........................: 10     min=10       max=10
 ```
+
+</details>
