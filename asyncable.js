@@ -46,3 +46,10 @@ async function run() {
 }
 
 run();
+
+/**
+ * testAsync :: 1 ✕ sleep(1000): 1011.212890625 ms
+ * testAsync :: 20 ✕ sleep(1000): 1007.69921875 ms
+ * testAsync :: 1 ✕ loop(500000000): 246.028076171875 ms
+ * testAsync :: 20 ✕ loop(500000000): 4802.077880859375 ms
+ */
